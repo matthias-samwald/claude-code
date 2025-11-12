@@ -8,6 +8,7 @@ Provenance tracking creates a detailed record of:
 
 - **User Input**: Every prompt and question submitted
 - **Actions Taken**: All tool calls (Read, Write, Edit, Bash, etc.) with inputs and results
+- **Thinking Blocks**: Claude's internal reasoning process (extracted from transcripts)
 - **Chain of Thought**: The sequence of operations showing how Claude approached problems
 - **File Lineage**: Which files were read, written, or edited, and when
 - **Subagent Activity**: Tracking of specialized agents and their relationships
@@ -49,6 +50,17 @@ The plugin uses Claude Code's **hook system** to intercept events:
 4. **PostToolUse**: Records all tool executions with full context
 5. **Stop/SubagentStop**: Tracks agent completion and subagent relationships
 
+### Thinking Block Extraction
+
+When a session or subagent completes, the **Stop/SubagentStop hooks** receive a `transcript_path` pointing to a conversation transcript file. The provenance tracker automatically:
+
+1. **Reads the transcript** - Parses the JSON transcript provided by Claude Code
+2. **Extracts thinking blocks** - Searches for content blocks with `type: "thinking"`
+3. **Saves separately** - Stores thinking blocks in `thinking_blocks.jsonl` for easy access
+4. **Links to events** - Associates thinking with message indices and timestamps
+
+**Note**: Thinking blocks are only available when transcript files are provided by Claude Code. The availability depends on the Claude Code version and session configuration.
+
 ### Data Storage
 
 Provenance data is stored in `~/.claude/provenance/<session_id>/`:
@@ -57,7 +69,8 @@ Provenance data is stored in `~/.claude/provenance/<session_id>/`:
 ~/.claude/provenance/
 └── <session_id>/
     ├── provenance.jsonl      # Complete event log (JSONL format)
-    └── metadata.json         # Session summary and statistics
+    ├── metadata.json         # Session summary and statistics
+    └── thinking_blocks.jsonl # Claude's thinking blocks (when available)
 ```
 
 ### Event Format
@@ -178,17 +191,58 @@ python3 plugins/provenance-tracking/query_provenance.py <session_id> --chain
 
 This shows the sequence of tool calls, useful for understanding Claude's approach.
 
+#### Show Thinking Blocks
+
+```bash
+python3 plugins/provenance-tracking/query_provenance.py <session_id> --thinking
+```
+
+Output:
+```
+THINKING BLOCKS (3 total):
+
+1. [2025-11-12 10:32:15 UTC]
+   Message: 0, Block: 0
+   Thinking:
+   I need to first understand the current authentication system
+   by searching for existing auth-related files. Let me use Grep
+   to find authentication references in the codebase...
+
+2. [2025-11-12 10:45:22 UTC]
+   Message: 2, Block: 1
+   Thinking:
+   Based on the files I've read, I can see the auth system uses
+   JWT tokens. I should modify the token validation logic to add
+   the requested expiration checking feature...
+```
+
+This displays Claude's internal reasoning extracted from session transcripts, providing direct insight into decision-making process.
+
 #### Export Full Provenance as JSON
 
 ```bash
 python3 plugins/provenance-tracking/query_provenance.py <session_id> --export > provenance.json
 ```
 
-This exports complete provenance data including all events, metadata, and file lineage.
+This exports complete provenance data including all events, metadata, file lineage, and thinking blocks.
 
 ## Understanding Chain of Thought
 
-While Claude's internal thinking blocks aren't directly captured by hooks, you can infer the chain of thought from:
+The plugin captures Claude's reasoning process through **two complementary mechanisms**:
+
+### 1. Direct Thinking Blocks
+
+When available, thinking blocks are extracted from session transcripts (provided by Stop hooks). These contain Claude's actual internal reasoning text, giving you direct insight into:
+- Problem analysis approach
+- Decision-making rationale
+- Planning and strategy
+- Debugging thought process
+
+View with: `--thinking`
+
+### 2. Inferred Chain of Thought
+
+Even without explicit thinking blocks, you can infer reasoning from behavioral patterns:
 
 1. **Tool Sequence**: The order of tool calls shows how Claude explored the problem
 2. **File Operations**: Which files were read before being edited shows information gathering
@@ -226,6 +280,9 @@ lineage = query.get_file_lineage()
 
 # Get user interactions
 inputs = query.get_user_interactions()
+
+# Get thinking blocks
+thinking = query.get_thinking_blocks()
 ```
 
 ### Filtering and Analysis
@@ -241,6 +298,12 @@ jq 'select(.action=="tool_execution" and .tool_name=="Write")' provenance.jsonl
 
 # Extract user prompts
 jq -r 'select(.action=="user_input") | .prompt' provenance.jsonl
+
+# View all thinking blocks
+jq -r '.thinking' thinking_blocks.jsonl
+
+# Search thinking blocks for specific terms
+jq -r 'select(.thinking | contains("authentication")) | .thinking' thinking_blocks.jsonl
 ```
 
 ### Integration with CI/CD

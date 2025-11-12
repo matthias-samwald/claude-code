@@ -115,17 +115,77 @@ class ProvenanceTracker:
 
     def _track_stop(self) -> Dict[str, Any]:
         """Track agent/subagent completion."""
+        transcript_path = self.hook_data.get("transcript_path")
+
         stop_data = {
             "action": "agent_stopped",
             "is_subagent": self.hook_event == "SubagentStop",
-            "transcript_path": self.hook_data.get("transcript_path"),
+            "transcript_path": transcript_path,
         }
 
         # For subagents, track parent relationship
         if self.hook_event == "SubagentStop":
             stop_data["parent_tool_use_id"] = self.hook_data.get("parent_tool_use_id")
 
+        # Extract thinking blocks from transcript if available
+        if transcript_path:
+            thinking_blocks = self._extract_thinking_from_transcript(transcript_path)
+            if thinking_blocks:
+                stop_data["thinking_blocks"] = thinking_blocks
+                # Also save to a separate file for easy access
+                self._save_thinking_blocks(thinking_blocks)
+
         return stop_data
+
+    def _extract_thinking_from_transcript(self, transcript_path: str) -> list:
+        """Extract thinking blocks from transcript file."""
+        thinking_blocks = []
+
+        try:
+            transcript_file = Path(transcript_path)
+            if not transcript_file.exists():
+                return thinking_blocks
+
+            with open(transcript_file, "r") as f:
+                transcript_data = json.load(f)
+
+            # Transcript may contain messages with thinking blocks
+            # Look for content blocks with type "thinking"
+            messages = transcript_data if isinstance(transcript_data, list) else transcript_data.get("messages", [])
+
+            for msg_idx, message in enumerate(messages):
+                if message.get("role") == "assistant":
+                    content = message.get("content", [])
+
+                    # Content can be a list of blocks or a string
+                    if isinstance(content, list):
+                        for block_idx, block in enumerate(content):
+                            if isinstance(block, dict) and block.get("type") == "thinking":
+                                thinking_blocks.append({
+                                    "message_index": msg_idx,
+                                    "block_index": block_idx,
+                                    "thinking": block.get("thinking", ""),
+                                    "timestamp": message.get("timestamp"),
+                                })
+
+        except Exception as e:
+            # Log error but don't fail
+            sys.stderr.write(f"Error extracting thinking from transcript: {e}\n")
+
+        return thinking_blocks
+
+    def _save_thinking_blocks(self, thinking_blocks: list):
+        """Save thinking blocks to a separate file for easy access."""
+        try:
+            thinking_file = self.provenance_dir / "thinking_blocks.jsonl"
+
+            with open(thinking_file, "a") as f:
+                for block in thinking_blocks:
+                    block["extracted_at"] = self.timestamp
+                    f.write(json.dumps(block) + "\n")
+
+        except Exception as e:
+            sys.stderr.write(f"Error saving thinking blocks: {e}\n")
 
     def _extract_file_operations(
         self,

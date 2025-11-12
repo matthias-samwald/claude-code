@@ -18,7 +18,10 @@ Examples:
     # Show file lineage
     python3 query_provenance.py abc123 --files
 
-    # Export full provenance as JSON
+    # Show thinking blocks
+    python3 query_provenance.py abc123 --thinking
+
+    # Export full provenance as JSON (includes thinking blocks)
     python3 query_provenance.py abc123 --export
 """
 
@@ -167,6 +170,25 @@ class ProvenanceQuery:
         """Get all user input events."""
         return self.get_events("user_input")
 
+    def get_thinking_blocks(self) -> List[Dict[str, Any]]:
+        """Get all thinking blocks from the session."""
+        thinking_blocks = []
+
+        # Read from the thinking_blocks.jsonl file if it exists
+        thinking_file = self.session_dir / "thinking_blocks.jsonl"
+        if thinking_file.exists():
+            with open(thinking_file, "r") as f:
+                for line in f:
+                    thinking_blocks.append(json.loads(line))
+
+        # Also check Stop events for thinking blocks
+        stop_events = self.get_events("agent_stopped")
+        for event in stop_events:
+            if "thinking_blocks" in event:
+                thinking_blocks.extend(event["thinking_blocks"])
+
+        return thinking_blocks
+
     def export_full_provenance(self) -> Dict[str, Any]:
         """Export complete provenance data."""
         return {
@@ -175,6 +197,7 @@ class ProvenanceQuery:
             "events": self.get_events(),
             "file_lineage": self.get_file_lineage(),
             "tool_chain": self.get_tool_chain(),
+            "thinking_blocks": self.get_thinking_blocks(),
         }
 
 
@@ -279,6 +302,35 @@ def print_file_lineage(lineage: Dict[str, Any]):
         print()
 
 
+def print_thinking_blocks(thinking_blocks: List[Dict[str, Any]]):
+    """Print thinking blocks."""
+    if not thinking_blocks:
+        print("\nNo thinking blocks found.")
+        print("Note: Thinking blocks are extracted from transcript files when available.")
+        return
+
+    print(f"\nTHINKING BLOCKS ({len(thinking_blocks)} total):\n")
+
+    for i, block in enumerate(thinking_blocks, 1):
+        timestamp = format_timestamp(block.get("timestamp") or block.get("extracted_at"))
+        thinking_text = block.get("thinking", "")
+
+        print(f"{i}. [{timestamp}]")
+        print(f"   Message: {block.get('message_index')}, Block: {block.get('block_index')}")
+
+        # Print thinking text with indentation, truncate if too long
+        if len(thinking_text) > 500:
+            preview = thinking_text[:250] + "\n   ... [truncated] ...\n   " + thinking_text[-250:]
+            print(f"   Thinking:\n   {preview}")
+            print(f"   [Full length: {len(thinking_text)} chars]")
+        else:
+            # Indent each line of thinking
+            indented = "\n   ".join(thinking_text.split("\n"))
+            print(f"   Thinking:\n   {indented}")
+
+        print()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Query and analyze Claude Code provenance data"
@@ -312,6 +364,11 @@ def main():
         "--export",
         action="store_true",
         help="Export full provenance as JSON"
+    )
+    parser.add_argument(
+        "--thinking",
+        action="store_true",
+        help="Show thinking blocks from the session"
     )
 
     args = parser.parse_args()
@@ -348,6 +405,12 @@ def main():
         if args.chain:
             chain = query.get_tool_chain()
             print_events(chain, "tool chain")
+            return
+
+        # Show thinking blocks
+        if args.thinking:
+            thinking_blocks = query.get_thinking_blocks()
+            print_thinking_blocks(thinking_blocks)
             return
 
         # Show specific event type
