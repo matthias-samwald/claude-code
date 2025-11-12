@@ -13,6 +13,7 @@ Tracks the complete provenance of Claude Code sessions including:
 import json
 import sys
 import os
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -34,6 +35,13 @@ class ProvenanceTracker:
 
         # Provenance log file
         self.log_file = self.provenance_dir / "provenance.jsonl"
+
+        # Determine plugin root and project directory
+        self.plugin_root = Path(os.environ.get("CLAUDE_PLUGIN_ROOT", ""))
+        self.project_dir = Path(os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd()))
+
+        # Load configuration
+        self.config = self._load_config()
 
     def track_event(self):
         """Track the current hook event."""
@@ -59,6 +67,10 @@ class ProvenanceTracker:
 
         # Update session metadata
         self._update_session_metadata(event_data)
+
+        # Auto-export if configured and session is ending
+        if self.hook_event == "SessionEnd" and self._should_auto_export():
+            self._auto_export_to_repo()
 
     def _track_session_start(self) -> Dict[str, Any]:
         """Track session initialization."""
@@ -312,6 +324,96 @@ class ProvenanceTracker:
         # Write updated metadata
         with open(metadata_file, "w") as f:
             json.dump(metadata, f, indent=2)
+
+    def _load_config(self) -> Dict[str, Any]:
+        """Load plugin configuration."""
+        try:
+            # Try to find config.json in plugin root
+            config_file = self.plugin_root / "config.json" if self.plugin_root else None
+            if not config_file or not config_file.exists():
+                # Fallback to default config
+                return {
+                    "auto_export": {
+                        "enabled": False,
+                        "export_on_session_end": True,
+                        "auto_commit": False,
+                        "link_to_commit": True,
+                    }
+                }
+
+            with open(config_file, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            sys.stderr.write(f"Warning: Could not load config: {e}\n")
+            return {"auto_export": {"enabled": False}}
+
+    def _should_auto_export(self) -> bool:
+        """Check if auto-export is enabled."""
+        auto_export = self.config.get("auto_export", {})
+        return (
+            auto_export.get("enabled", False) and
+            auto_export.get("export_on_session_end", True)
+        )
+
+    def _find_git_root(self, start_path: Path) -> Optional[Path]:
+        """Find the root of the git repository."""
+        current = start_path.resolve()
+        while current != current.parent:
+            if (current / ".git").exists():
+                return current
+            current = current.parent
+        return None
+
+    def _auto_export_to_repo(self):
+        """Automatically export provenance to repository."""
+        try:
+            # Find git repository
+            repo_path = self._find_git_root(self.project_dir)
+            if not repo_path:
+                sys.stderr.write("Auto-export: No git repository found\n")
+                return
+
+            # Build export command
+            export_script = self.plugin_root / "export_to_repo.py"
+            if not export_script.exists():
+                sys.stderr.write(f"Auto-export: Export script not found at {export_script}\n")
+                return
+
+            cmd = [
+                "python3",
+                str(export_script),
+                "--session", self.session_id,
+                "--repo", str(repo_path),
+            ]
+
+            # Add optional flags based on config
+            auto_export = self.config.get("auto_export", {})
+            if auto_export.get("link_to_commit", True):
+                cmd.extend(["--link-commit", "HEAD"])
+            if auto_export.get("auto_commit", False):
+                cmd.append("--auto-commit")
+                message = auto_export.get("commit_message_template", "").format(
+                    session_id=self.session_id[:8]
+                )
+                if message:
+                    cmd.extend(["--commit-message", message])
+
+            # Run export
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+
+            if result.returncode == 0:
+                sys.stderr.write(f"Auto-export: Successfully exported session {self.session_id[:8]}\n")
+            else:
+                sys.stderr.write(f"Auto-export failed: {result.stderr}\n")
+
+        except Exception as e:
+            # Don't fail the hook if export fails
+            sys.stderr.write(f"Auto-export error: {e}\n")
 
 
 def main():

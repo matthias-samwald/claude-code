@@ -1,0 +1,21 @@
+{
+  "auto_export": {
+    "enabled": false,
+    "export_on_session_end": true,
+    "auto_commit": false,
+    "link_to_commit": true,
+    "commit_message_template": "chore: Add provenance for session {session_id}"
+  },
+  "capture": {
+    "thinking_blocks": true,
+    "tool_inputs": true,
+    "tool_results": true,
+    "sanitize_large_content": true,
+    "max_tool_input_size": 1000,
+    "max_tool_result_size": 2000
+  },
+  "export": {
+    "target_directory": "_provenance",
+    "include_export_metadata": true
+  }
+}

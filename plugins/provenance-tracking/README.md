@@ -101,6 +101,184 @@ Each event in `provenance.jsonl` contains:
 }
 ```
 
+## Exporting Provenance to Git Repository
+
+The plugin supports exporting provenance data directly into your git repository, making it part of the project history alongside the code artifacts that Claude creates.
+
+### Why Export to Repo?
+
+Storing provenance data in the repository provides:
+- **Transparency**: Provenance travels with the code
+- **Auditability**: Complete record of AI-generated changes
+- **Reproducibility**: Understand the context of every change
+- **Scrutiny**: Enable review by humans or critic AI agents
+- **Compliance**: Meet requirements for AI-assisted development
+
+### Repository Structure
+
+When exported, provenance is stored in a `_provenance/` directory:
+
+```
+your-project/
+├── src/                    # Regular code
+├── tests/
+├── _provenance/
+│   ├── manifest.json       # Index of all provenance data
+│   ├── sessions/
+│   │   └── <session_id>/
+│   │       ├── provenance.jsonl
+│   │       ├── metadata.json
+│   │       ├── thinking_blocks.jsonl
+│   │       └── export_metadata.json
+│   └── commits/
+│       └── <commit_hash>.json  # Links commits to sessions
+└── .gitignore
+```
+
+### Manual Export
+
+Export a specific session to the repository:
+
+```bash
+# Basic export
+python3 plugins/provenance-tracking/export_to_repo.py --session <session_id>
+
+# Export and link to a specific commit
+python3 plugins/provenance-tracking/export_to_repo.py \
+  --session <session_id> \
+  --link-commit HEAD
+
+# Export and automatically create a provenance commit
+python3 plugins/provenance-tracking/export_to_repo.py \
+  --session <session_id> \
+  --auto-commit
+
+# Specify repository path explicitly
+python3 plugins/provenance-tracking/export_to_repo.py \
+  --session <session_id> \
+  --repo /path/to/repo \
+  --link-commit HEAD \
+  --auto-commit
+```
+
+### Automatic Export
+
+Enable automatic export by editing `plugins/provenance-tracking/config.json`:
+
+```json
+{
+  "auto_export": {
+    "enabled": true,
+    "export_on_session_end": true,
+    "auto_commit": false,
+    "link_to_commit": true,
+    "commit_message_template": "chore: Add provenance for session {session_id}"
+  }
+}
+```
+
+**Configuration options:**
+- `enabled`: Turn auto-export on/off
+- `export_on_session_end`: Export when session ends
+- `auto_commit`: Automatically create a git commit for provenance
+- `link_to_commit`: Link session to the HEAD commit
+- `commit_message_template`: Template for commit messages
+
+### Commit Linkage
+
+When you link a session to a commit, a metadata file is created in `_provenance/commits/<commit_hash>.json`:
+
+```json
+{
+  "commit": {
+    "hash": "abc123...",
+    "author_name": "Developer Name",
+    "timestamp": "2025-11-12T10:30:45Z",
+    "subject": "Add authentication feature"
+  },
+  "session_id": "session_xyz",
+  "files_changed_in_commit": ["src/auth.py", "tests/test_auth.py"],
+  "session_metadata": {
+    "started_at": "2025-11-12T10:00:00Z",
+    "ended_at": "2025-11-12T10:45:00Z",
+    "total_events": 47,
+    "tool_usage_count": {"Read": 15, "Edit": 8, "Bash": 6}
+  },
+  "provenance_path": "_provenance/sessions/session_xyz/"
+}
+```
+
+This creates a bidirectional link:
+- From commit → session provenance
+- From session → commit that included the changes
+
+### Manifest File
+
+The `_provenance/manifest.json` provides an index of all provenance data:
+
+```json
+{
+  "version": "1.0",
+  "created_at": "2025-11-12T10:00:00Z",
+  "last_updated": "2025-11-12T15:30:00Z",
+  "agent": {
+    "name": "claude-code",
+    "model": "claude-sonnet-4-5-20250929"
+  },
+  "sessions": [
+    {
+      "session_id": "abc123...",
+      "exported_at": "2025-11-12T10:45:00Z",
+      "path": "_provenance/sessions/abc123/"
+    }
+  ],
+  "commits": [
+    {
+      "commit_hash": "def456...",
+      "session_id": "abc123...",
+      "timestamp": "2025-11-12T10:30:00Z",
+      "path": "_provenance/commits/def456.json"
+    }
+  ]
+}
+```
+
+### Workflow Examples
+
+#### Workflow 1: Manual Export After Work
+
+```bash
+# 1. Work with Claude Code (creates session)
+# 2. Commit your code changes
+git add src/ tests/
+git commit -m "Add authentication feature"
+
+# 3. Export provenance and link to commit
+python3 plugins/provenance-tracking/export_to_repo.py \
+  --session <session_id> \
+  --link-commit HEAD \
+  --auto-commit
+```
+
+#### Workflow 2: Automatic Export
+
+```bash
+# 1. Enable auto-export in config.json
+# 2. Work with Claude Code
+# 3. Provenance automatically exported on session end
+# 4. Optionally auto-committed to repo
+```
+
+#### Workflow 3: Selective Export for High-Stakes Work
+
+```bash
+# Only export important sessions
+# Keep experimental work local in ~/.claude/provenance/
+python3 plugins/provenance-tracking/export_to_repo.py \
+  --session <critical_session_id> \
+  --auto-commit
+```
+
 ## Usage
 
 ### Automatic Tracking
