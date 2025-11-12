@@ -1,0 +1,26 @@
+{
+  "SessionStart": {
+    "command": "python3 {{PLUGIN_ROOT}}/hooks/provenance_tracker.py",
+    "permission": "allow"
+  },
+  "SessionEnd": {
+    "command": "python3 {{PLUGIN_ROOT}}/hooks/provenance_tracker.py",
+    "permission": "allow"
+  },
+  "UserPromptSubmit": {
+    "command": "python3 {{PLUGIN_ROOT}}/hooks/provenance_tracker.py",
+    "permission": "allow"
+  },
+  "PostToolUse": {
+    "command": "python3 {{PLUGIN_ROOT}}/hooks/provenance_tracker.py",
+    "permission": "allow"
+  },
+  "Stop": {
+    "command": "python3 {{PLUGIN_ROOT}}/hooks/provenance_tracker.py",
+    "permission": "allow"
+  },
+  "SubagentStop": {
+    "command": "python3 {{PLUGIN_ROOT}}/hooks/provenance_tracker.py",
+    "permission": "allow"
+  }
+}

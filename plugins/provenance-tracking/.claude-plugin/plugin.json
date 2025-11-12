@@ -1,0 +1,7 @@
+{
+  "name": "provenance-tracking",
+  "version": "1.0.0",
+  "author": "Claude Code",
+  "description": "Comprehensive provenance tracking for Claude Code sessions, capturing user input, tool usage, and action chains",
+  "repository": "https://github.com/anthropics/claude-code"
+}
